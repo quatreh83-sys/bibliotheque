@@ -4,7 +4,7 @@ import {showMap} from './map3d.js';
 const sb=createClient(SUPABASE_URL,SUPABASE_KEY),$=s=>document.querySelector(s),dlg=$('#dlg');
 const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const col=d=>{let h=7;for(const c of d||'x')h=(h*31+c.charCodeAt(0))%360;return`hsl(${h} 50% 60%)`};
+const col=()=>'#b8892f';
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',3500)};
 let books=[],loans={},me=null,admin=false,uname='',dom='';
 const sorts={domain:(a,b)=>(a.domain||'').localeCompare(b.domain||'')||a.title.localeCompare(b.title),author:(a,b)=>(a.author||'').localeCompare(b.author||''),title:(a,b)=>a.title.localeCompare(b.title),year:(a,b)=>(b.year||0)-(a.year||0)};
