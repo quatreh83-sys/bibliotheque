@@ -1,6 +1,3 @@
-titre;auteur;annee;domaine;isbn;rayon;etagere;bloc
-Introduction à la dogmatique;Karl Rahner;1976;Dogmatique générale;;A;1;2
-Marie dans le mystère du salut;Hugo Rahner;1962;Mariologie;;B;2;4
-Jésus de Nazareth;Joseph Ratzinger;2007;Christologie;;C;3;1
-La Bible de Jérusalem;Collectif;1998;Bibles;;D;5;3
-Théologie morale fondamentale;Servais Pinckaers;1985;Théologie morale;;E;2;5
+Auteur;Titre;Sous-titre;Éditeur;Ville;Collection;Tome;Année;Code
+Joseph Ratzinger;Jésus de Nazareth;Du baptême à la Transfiguration;Flammarion;Paris;;1;2007;C12
+Servais Pinckaers;Les sources de la morale chrétienne;Sa méthode, son contenu, son histoire;Cerf;Paris;Études d'éthique chrétienne;;1985;E03

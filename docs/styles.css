@@ -25,3 +25,18 @@ dialog::backdrop{background:#0006}dialog input{width:100%;margin:.25rem 0}
 #map{height:340px;border-radius:12px;overflow:hidden;margin:.8rem 0;border:1px solid var(--line)}.mut{color:var(--mut)}
 #toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--wine);color:#fff;padding:.5rem 1rem;border-radius:99px;display:none}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+.f{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}.f input{margin:0}
+#more{text-align:center;padding:0 1rem 2rem}
+@media(max-width:640px){
+ header{padding:.6rem .7rem .3rem}
+ #acct{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+ .bar{flex-direction:column}.bar input,.bar select{width:100%;min-height:44px}
+ input,select{font-size:16px}
+ #chips{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;padding:.2rem 0}#chips button{white-space:nowrap;min-height:36px}
+ .grid{grid-template-columns:1fr;padding:.6rem;gap:.7rem}
+ .act button{flex:1;min-height:42px}
+ dialog{width:100vw;max-width:100vw;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0}
+ #map{height:55dvh}.f{grid-template-columns:1fr}
+ #toast{width:90vw;text-align:center;border-radius:12px}
+}
+@supports(padding:env(safe-area-inset-top)){header{padding-top:max(.6rem,env(safe-area-inset-top))}}
