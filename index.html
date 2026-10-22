@@ -1,0 +1,14 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bibliothèque de théologie</title><meta name="theme-color" content="#1a1013">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head>
+<body><header><div id="acct"></div><h1>Bibliothèque de théologie</h1><p>Cherchez un livre, trouvez son étagère.</p>
+<div class="bar"><input id="q" type="search" placeholder="Titre, auteur, sujet…" autocomplete="off">
+<select id="sort"><option value="domain">Par domaine</option><option value="author">Auteur A→Z</option><option value="title">Titre A→Z</option><option value="year">Plus récents</option></select></div>
+<div id="chips"></div></header>
+<main><div class="grid" id="list"></div><div id="sugg"></div></main>
+<dialog id="dlg"></dialog><div id="toast"></div>
+<script type="module" src="app.js"></script>
+<script>if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js')</script></body></html>

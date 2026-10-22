@@ -1,0 +1,25 @@
+:root{--bg:#1a1013;--card:#2a1a1f;--wine:#7b2d3e;--gold:#e8c872;--cream:#f6ecd9;--mut:#b9a893}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 15% 0,#4a1c2a,var(--bg) 55%) fixed;color:var(--cream);font:16px/1.5 Inter,system-ui,sans-serif}
+h1,h2,h3{font-family:'Cormorant Garamond',Georgia,serif;margin:.2em 0}
+header{padding:1.5rem 1rem 1rem;text-align:center}h1{font-size:clamp(2rem,6vw,3.2rem);color:var(--gold);font-weight:700}
+header p{color:var(--mut);margin:0 0 1rem}
+#acct{text-align:right;font-size:.9rem}
+.bar{display:flex;gap:.5rem;max-width:640px;margin:auto}
+input,select,button{font:inherit;border-radius:10px;border:1px solid #5a3a42;background:#20141a;color:var(--cream);padding:.6rem .8rem}
+.bar input{flex:1;font-size:1.1rem;border-color:var(--gold)}
+button{cursor:pointer;background:var(--wine);border-color:var(--wine)}button:hover{background:#9a3b50}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--gold)}
+#chips{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;margin:1rem auto;max-width:900px}
+#chips button{background:none;border-color:#5a3a42;padding:.25rem .8rem;font-size:.85rem}#chips .on{background:var(--gold);color:#2a1a1f;border-color:var(--gold)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:1rem;padding:1rem;max-width:1100px;margin:auto}
+#sugg{max-width:1100px;margin:auto;padding:0 1rem}
+.card{background:linear-gradient(135deg,var(--card),#221318);border-left:6px solid var(--c);border-radius:6px 16px 16px 6px;padding:1rem;box-shadow:0 8px 24px #0006;transition:transform .2s}
+.card:hover{transform:translateY(-3px)}.card h3{font-size:1.35rem;line-height:1.2}.card p{margin:0;color:var(--mut)}.card small{color:var(--c)}
+.tag{display:inline-block;margin:.5rem 0;padding:.1rem .6rem;border-radius:99px;font-size:.8rem}.g{background:#2d4a3a}.o{background:#6b4a1f}.r{background:#6b1f2a}
+.act{display:flex;gap:.4rem;flex-wrap:wrap}.act button{padding:.3rem .7rem;font-size:.85rem}
+dialog{background:var(--card);color:var(--cream);border:1px solid var(--gold);border-radius:16px;width:min(680px,94vw);max-height:90vh}
+dialog::backdrop{background:#000b}dialog input{width:100%;margin:.25rem 0}
+#map{height:340px;border-radius:12px;overflow:hidden;margin:.8rem 0}.mut{color:var(--mut)}
+#toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--gold);color:#2a1a1f;padding:.5rem 1rem;border-radius:99px;display:none}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
