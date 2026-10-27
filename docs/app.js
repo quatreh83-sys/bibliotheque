@@ -1,13 +1,12 @@
-import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-import {SUPABASE_URL,SUPABASE_KEY} from './config.js';
 import {showMap} from './map3d.js';
 import {domainOf} from './domaines.js';
-const sb=createClient(SUPABASE_URL,SUPABASE_KEY),$=s=>document.querySelector(s),dlg=$('#dlg');
+const $=s=>document.querySelector(s),dlg=$('#dlg');
+const api=async(p,m='GET',b)=>{const t=localStorage.getItem('tok'),r=await fetch('/api/'+p,{method:m,headers:{'Content-Type':'application/json',...(t?{Authorization:'Bearer '+t}:{})},body:b?JSON.stringify(b):undefined}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Erreur');return j},ok=p=>p.then(()=>({}),error=>({error}));
 const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const col=()=>'#b8892f';
 const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',3500)};
-let books=[],loans={},me=null,admin=false,uname='',dom='',lim=60;
+let books=[],loans={},me=null,admin=false,uname='',dom='',lim=60,nrep=0,staff=false;
 const sorts={domain:(a,b)=>(a.domain||'').localeCompare(b.domain||'')||a.title.localeCompare(b.title),author:(a,b)=>(a.author||'').localeCompare(b.author||''),title:(a,b)=>a.title.localeCompare(b.title),year:(a,b)=>(b.year||0)-(a.year||0)};
 function lev(a,b){const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]==b[j-1]?0:1));return d[a.length][b.length]}
 function search(q){const t=norm(q).split(/\s+/).filter(Boolean);if(!t.length)return{exact:[...books],near:[]};const exact=[],near=[];
@@ -15,17 +14,17 @@ function search(q){const t=norm(q).split(/\s+/).filter(Boolean);if(!t.length)ret
   if(ok)(cost?near:exact).push(Object.assign(b,{_c:cost}))}
  return{exact,near:near.sort((a,b)=>a._c-b._c)}}
 function prep(){books.forEach(b=>{b.domain=b.domain||domainOf(b.code);b._t=norm([b.title,b.subtitle,b.author,b.domain,b.isbn,b.code,b.publisher,b.collection].join(' '));b._w=b._t.split(/\s+/)})}
-async function load(){try{let all=[],f=0;for(;;){const{data,error}=await sb.from('books').select('*').order('id').range(f,f+999);if(error)throw error;all.push(...data);if(data.length<1000)break;f+=1000}
-  books=all;localStorage.setItem('cat',JSON.stringify(all))}catch(e){books=JSON.parse(localStorage.getItem('cat')||'[]');toast('Mode hors ligne : catalogue en mémoire')}
- prep();loans={};if(me){const{data}=await sb.from('loans').select('book_id,user_id,profiles(full_name)').is('returned_at',null);loans=Object.fromEntries((data||[]).map(l=>[l.book_id,l]))}render()}
-const card=b=>{const l=loans[b.id],st=b.lost?'<span class="tag r">Perdu</span>':b.status=='borrowed'?`<span class="tag o">Emprunté${l?.profiles?' par '+esc(l.profiles.full_name):''}</span>`:'<span class="tag g">Disponible</span>',a=(k,t)=>`<button data-a="${k}" data-id="${b.id}">${t}</button>`;
- return`<article class="card" style="--c:${col(b.domain)}"><h3>${esc(b.title)}</h3>${b.subtitle?`<p><i>${esc(b.subtitle)}</i></p>`:''}<p>${esc(b.author)}</p><p class="mut">${esc([b.publisher,b.city,b.year].filter(Boolean).join(', '))}${b.collection?' · coll. '+esc(b.collection):''}${b.volume?' · t. '+esc(b.volume):''}</p><small>${esc(b.domain)}${b.code?' · '+esc(b.code):''}</small><div>${st}</div><div class="act">${a('loc','📍 Localiser')}${me&&b.status=='available'&&!b.lost?a('borrow','Emprunter'):''}${me&&b.status=='borrowed'&&(admin||l?.user_id==me.id)?a('ret','Rendu'):''}${admin?a('lost',b.lost?'Retrouvé':'Perdu')+a('del','🗑'):''}</div></article>`};
+async function load(){try{books=await api('books');localStorage.setItem('cat',JSON.stringify(books))}catch(e){books=JSON.parse(localStorage.getItem('cat')||'[]');toast('Mode hors ligne : catalogue en mémoire')}
+ prep();loans={};if(me){try{loans=Object.fromEntries((await api('loans/active')).map(l=>[l.book_id,{...l,profiles:{full_name:l.full_name}}]))}catch{}}if(admin)api('reports').then(r=>{nrep=r.length;acct()}).catch(()=>{});render()}
+const card=b=>{const l=loans[b.id],pend=b.status=='borrowed'&&l?.return_requested_at,mine=!!me&&l?.user_id==me.id,nm=l?.profiles?' par '+esc(l.profiles.full_name):'',
+ st=b.lost?'<span class="tag r">Perdu</span>':pend?`<span class="tag o">Retour en attente de validation${nm}</span>`:b.status=='borrowed'?`<span class="tag o">Emprunté${nm}</span>`:'<span class="tag g">Disponible</span>',a=(k,t)=>`<button data-a="${k}" data-id="${b.id}">${t}</button>`;
+ return`<article class="card" style="--c:${col(b.domain)}"><h3>${esc(b.title)}</h3>${b.subtitle?`<p><i>${esc(b.subtitle)}</i></p>`:''}<p>${esc(b.author)}</p><p class="mut">${esc([b.publisher,b.city,b.year].filter(Boolean).join(', '))}${b.collection?' · coll. '+esc(b.collection):''}${b.volume?' · t. '+esc(b.volume):''}</p><small>${esc(b.domain)}${b.code?' · '+esc(b.code):''}</small><div>${st}${admin&&!b.reviewed?' <span class="tag o">À vérifier</span>':''}</div><div class="act">${a('loc','📍 Localiser')}${me&&!b.lost&&!mine&&(b.status=='available'||pend)?a('borrow','Emprunter'):''}${mine&&!pend&&b.status=='borrowed'?a('ret','Signaler le retour'):''}${staff&&b.status=='borrowed'?a('val',pend?'Valider le retour':'Marquer rendu'):''}${staff?a('lost',b.lost?'Retrouvé':'Perdu'):''}${admin?a('edit','✏️')+a('del','🗑'):''}</div></article>`};
 function render(){const q=$('#q').value,{exact,near}=search(q),f=x=>dom?x.filter(b=>b.domain==dom):x;
  const L=f(exact).sort(sorts[$('#sort').value]);$('#list').innerHTML=L.slice(0,lim).map(card).join('')||'<p class="mut">Aucun résultat exact.</p>';$('#more').innerHTML=L.length>lim?`<button data-a="more">Afficher plus (${L.length-lim})</button>`:'';
  $('#sugg').innerHTML=near.length?'<h3>Vouliez-vous dire…</h3><div class="grid">'+f(near).slice(0,12).map(card).join('')+'</div>':'';
  const ds=[...new Set(books.map(b=>b.domain).filter(Boolean))].sort();
  $('#chips').innerHTML=['',...ds].map(d=>`<button data-a="dom" data-d="${esc(d)}" class="${d==dom?'on':''}">${d?esc(d):'Tous'}</button>`).join('')}
-function acct(){$('#acct').innerHTML=me?`${esc(uname)} <button data-a="hist">Historique</button> ${admin?'<button data-a="adm">Administration</button>':''} <button data-a="out">Quitter</button>`:'<button data-a="login">Connexion</button>'}
+function acct(){$('#acct').innerHTML=me?`${esc(uname)} <button data-a="hist">Historique</button> ${staff?`<button data-a="adm">Gestion${nrep?' ('+nrep+')':''}</button>`:''} <button data-a="out">Quitter</button>`:'<button data-a="login">Connexion</button>'}
 function open(h){dlg.innerHTML=h+'<p><button data-a="close">Fermer</button></p>';dlg.showModal()}
 const F=['title','subtitle','author','publisher','city','collection','volume','year','code','isbn','rayon','etagere','bloc'],P=['Titre','Sous-titre','Auteur(s)','Éditeur','Ville','Collection','Tome','Année','Code','ISBN','Rayon (A-F)','Étagère (1-5)','Bloc (1-6)'];
 function csv(t){const sep=t.split('\n')[0].includes(';')?';':',',r=[];let row=[],c='',q=false;for(let i=0;i<t.length;i++){const h=t[i];if(q){if(h=='"'&&t[i+1]=='"'){c+='"';i++}else if(h=='"')q=false;else c+=h}else if(h=='"')q=true;else if(h==sep){row.push(c);c=''}else if(h=='\n'||h=='\r'){if(h=='\r'&&t[i+1]=='\n')i++;row.push(c);r.push(row);row=[];c=''}else c+=h}if(c||row.length){row.push(c);r.push(row)}return r.filter(x=>x.join('').trim())}
@@ -34,18 +33,22 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
  if(a=='close')return dlg.close();if(a=='more'){lim+=60;return render()}if(a=='dom'){dom=t.dataset.d;return render()}
  if(a=='loc'){if(!b.rayon)return open(`<h2>${esc(b.title)}</h2><p class="mut">Emplacement pas encore renseigné.</p>`);open(`<h2>${esc(b.title)}</h2><p>Rayon <b>${esc(b.rayon)}</b> · étagère <b>${b.etagere}</b> · bloc <b>${b.bloc}</b></p><div id="map"></div><p class="mut">Faites glisser pour tourner, pincez pour zoomer.</p>`);return showMap($('#map'),b)}
  if(a=='login')return open('<h2>Connexion</h2><input id="em" type="email" placeholder="Email"><input id="pw" type="password" placeholder="Mot de passe"><p><button data-a="dologin">Se connecter</button></p>');
- if(a=='dologin'){const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});return error?toast('Email ou mot de passe incorrect'):dlg.close()}
- if(a=='out')return sb.auth.signOut();
- if(a=='hist'){const{data}=await sb.from('loans').select('borrowed_at,returned_at,user_id,books(title),profiles(full_name)').order('borrowed_at',{ascending:false}).limit(300);
-  return open('<h2>Historique des retraits</h2>'+((data||[]).filter(l=>admin||l.user_id==me.id).map(l=>`<p>${esc(l.books?.title)} · ${admin?esc(l.profiles?.full_name)+' · ':''}${new Date(l.borrowed_at).toLocaleDateString('fr')} ${l.returned_at?'→ rendu':'(en cours)'}</p>`).join('')||'<p class="mut">Aucun retrait.</p>'))}
- if(a=='adm')return open('<h2>Administration</h2><h3>Ajouter un livre</h3><div class="f">'+F.map((f,i)=>`<input id="f_${f}" placeholder="${P[i]}">`).join('')+'</div><p><button data-a="add">Ajouter</button></p><h3>Importer un fichier CSV</h3><input id="csv" type="file" accept=".csv"><p><button data-a="imp">Importer</button></p>');
- if(a=='add'){const o={};F.forEach(f=>o[f]=$('#f_'+f).value.trim()||null);['year','etagere','bloc'].forEach(k=>o[k]=num(o[k]));r=await sb.from('books').insert(o);if(!r.error){toast('Livre ajouté');dlg.close()}}
+ if(a=='dologin'){try{const j=await api('login','POST',{email:$('#em').value,password:$('#pw').value});localStorage.setItem('tok',j.token);localStorage.setItem('usr',JSON.stringify(j.user));dlg.close();return init()}catch(e){return toast(e.message)}}
+ if(a=='out'){localStorage.removeItem('tok');localStorage.removeItem('usr');return init()}
+ if(a=='hist'){const data=await api('loans');
+  return open('<h2>Historique des retraits</h2>'+((data||[]).map(l=>`<p>${esc(l.title)} · ${staff?esc(l.full_name)+' · ':''}${new Date(l.borrowed_at).toLocaleDateString('fr')} ${l.returned_at?'→ rendu':'(en cours)'}</p>`).join('')||'<p class="mut">Aucun retrait.</p>'))}
+ if(a=='adm'){const rep=admin?await api('reports').catch(()=>[]):[];return open('<h2>Gestion</h2>'+(rep.length?'<h3>Livres ajoutés à vérifier ('+rep.length+')</h3>'+rep.map(x=>`<p>${esc(x.title)} · ajouté par ${esc(x.added_by_name)} <button data-a="edit" data-id="${x.id}">Vérifier</button></p>`).join(''):'')+'<h3>Ajouter un livre</h3><div class="f">'+F.map((f,i)=>`<input id="f_${f}" placeholder="${P[i]}">`).join('')+'</div><p><button data-a="add">Ajouter</button></p>'+(admin?'<h3>Importer un fichier CSV</h3><input id="csv" type="file" accept=".csv,.txt"><p><button data-a="imp">Importer</button></p><h3>Créer un compte</h3><div class="f"><input id="u_name" placeholder="Nom complet"><input id="u_email" type="email" placeholder="Email"><input id="u_pw" placeholder="Mot de passe provisoire"><select id="u_role"><option value="student">Étudiant</option><option value="librarian">Bibliothécaire</option></select></div><p><button data-a="newuser">Créer le compte</button></p>':''))}
+ if(a=='add'){const o={};F.forEach(f=>o[f]=$('#f_'+f).value.trim()||null);['year','etagere','bloc'].forEach(k=>o[k]=num(o[k]));r=await ok(api('books','POST',o));if(!r.error){toast('Livre ajouté');dlg.close()}}
  if(a=='imp'){const f=$('#csv').files[0];if(!f)return toast('Choisissez un fichier');const buf=await f.arrayBuffer();let tx;try{tx=new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch{tx=new TextDecoder('windows-1252').decode(buf)}
   const rows=csv(tx),hd=rows[0].map(hk);if(!hd.includes('title'))return toast('Colonne Titre introuvable');const objs=rows.slice(1).map(x=>{const o={};hd.forEach((k,i)=>k&&(o[k]=x[i]?.trim()||null));['year','etagere','bloc'].forEach(k=>o[k]=num(o[k]));return o}).filter(o=>o.title);
-  for(let i=0;i<objs.length;i+=500){r=await sb.from('books').insert(objs.slice(i,i+500));if(r.error)break}if(!r.error){toast(objs.length+' livres importés');dlg.close()}}
- if(a=='borrow')r=await sb.rpc('borrow_book',{p_book:id});if(a=='ret')r=await sb.rpc('return_book',{p_book:id});
- if(a=='lost')r=await sb.from('books').update({lost:!b.lost}).eq('id',id);if(a=='del'&&confirm('Supprimer ce livre ?'))r=await sb.from('books').delete().eq('id',id);
+  for(let i=0;i<objs.length;i+=500){r=await ok(api('books','POST',objs.slice(i,i+500)));if(r.error)break}if(!r.error){toast(objs.length+' livres importés');dlg.close()}}
+ if(a=='edit')return open('<h2>Modifier / vérifier</h2><div class="f">'+F.map((f,i)=>`<input id="f_${f}" placeholder="${P[i]}" value="${esc(b[f])}">`).join('')+`</div><p><button data-a="save" data-id="${id}">Enregistrer et valider</button></p>`);
+ if(a=='save'){const o={};F.forEach(f=>o[f]=$('#f_'+f).value.trim()||null);['year','etagere','bloc'].forEach(k=>o[k]=num(o[k]));r=await ok(api('books/'+id,'PATCH',o));if(!r.error){toast('Enregistré');dlg.close()}}
+ if(a=='val')r=await ok(api('books/'+id+'/validate','POST'));
+ if(a=='newuser'){r=await ok(api('users','POST',{name:$('#u_name').value,email:$('#u_email').value,password:$('#u_pw').value,role:$('#u_role').value}));if(!r.error){toast('Compte créé');dlg.close()}}
+ if(a=='borrow')r=await ok(api('books/'+id+'/borrow','POST'));if(a=='ret')r=await ok(api('books/'+id+'/return','POST'));
+ if(a=='lost')r=await ok(api('books/'+id+'/lost','PATCH'));if(a=='del'&&confirm('Supprimer ce livre ?'))r=await ok(api('books/'+id,'DELETE'));
  if(r?.error)toast(r.error.message);if(r&&!r.error)load()});
 $('#q').oninput=()=>{lim=60;render()};$('#sort').onchange=render;
-async function init(s){me=s?.user||null;admin=false;uname='';if(me){const{data}=await sb.from('profiles').select('role,full_name').eq('id',me.id).single();admin=data?.role=='admin';uname=data?.full_name||me.email}acct();load()}
-sb.auth.onAuthStateChange((_,s)=>setTimeout(()=>init(s),0));
+function init(){const u=JSON.parse(localStorage.getItem('usr')||'null');me=u;admin=u?.role=='admin';staff=!!u&&u.role!='student';uname=u?.name||'';acct();load()}
+init();
