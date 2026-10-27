@@ -6,7 +6,7 @@ const q=(s,p)=>db.query(s,p).then(r=>r.rows),qa=(s,p)=>db.query({text:s,values:p
 const fail=(http,error)=>Object.assign(new Error(error),{http});
 const tx=async f=>{const c=await db.connect();try{await c.query('begin');const r=await f((s,p)=>c.query(s,p).then(x=>x.rows));await c.query('commit');return r}catch(e){await c.query('rollback');throw e}finally{c.release()}};
 const app=express();app.use(compression());app.use(express.json({limit:'10mb'}));
-const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Existe déjà':'Erreur serveur'})});
+const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Cet email est déjà utilisé':'Erreur serveur'})});
 const auth=async(req,res,next)=>{try{const t=jwt.verify((req.headers.authorization||'').slice(7),SECRET),[u]=await q('select id,full_name,email,role,active from users where id=$1',[t.id]);if(!u||!u.active)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Connexion requise'})}};
 const need=(...r)=>(req,res,next)=>r.includes(req.u.role)?next():res.status(403).json({error:'Accès refusé'});
 const adm=need('admin'),staff=need('admin','librarian'),ROLES=['student','librarian','admin'];
@@ -16,7 +16,7 @@ await q(`create table if not exists users(id serial primary key,email text uniqu
 create table if not exists books(id serial primary key,kind text not null default 'physique',numero int,title text not null,subtitle text,author text,publisher text,city text,collection text,volume text,year int,code text,domain text,path text,filetype text,isbn text,rayon text,etagere int,bloc int,status text not null default 'available',lost boolean not null default false,reviewed boolean not null default true,added_by int);
 create table if not exists loans(id serial primary key,book_id int references books on delete cascade,user_id int references users,borrower_name text,lent_by int references users,borrowed_at timestamptz default now(),return_requested_at timestamptz,returned_at timestamptz);
 create table if not exists meta(k text primary key,v text);
-alter table users add column if not exists active boolean not null default true;
+alter table users add column if not exists active boolean not null default true;alter table users add column if not exists created_at timestamptz default now();
 alter table books add column if not exists kind text not null default 'physique';alter table books add column if not exists numero int;alter table books add column if not exists path text;alter table books add column if not exists filetype text;
 alter table books add column if not exists reviewed boolean not null default true;alter table books add column if not exists added_by int;
 alter table loans add column if not exists return_requested_at timestamptz;alter table loans add column if not exists borrower_name text;alter table loans add column if not exists lent_by int;
@@ -33,6 +33,7 @@ if(fs.existsSync(seedFile)&&!(await q("select 1 from meta where k='seed'")).leng
   await q("insert into meta values('seed',$1)",[d.version]);console.log('Catalogue chargé :',d.rows.length,'notices')}
 
 /* ---------- Public ---------- */
+app.get('/api/version',(_,r)=>r.json({version:'2.1'}));
 const BC='id,kind,numero,title,subtitle,author,publisher,city,collection,volume,year,code,domain,path,filetype,isbn,rayon,etagere,bloc,status,lost,reviewed';
 app.get('/api/stats',wrap(async(_,r)=>{const[s]=await q("select count(*) filter(where kind='physique')::int physique,count(*) filter(where kind='numerique')::int numerique,count(*) filter(where kind='physique' and status='available' and not lost)::int available,count(*) filter(where kind='physique' and status='borrowed')::int borrowed from books");r.json(s)}));
 app.get('/api/books',wrap(async(req,res)=>res.json({cols:BC.split(','),rows:await qa(`select ${BC} from books where kind=$1 order by id`,[req.query.kind=='numerique'?'numerique':'physique'])})));
@@ -83,7 +84,7 @@ app.delete('/api/books/:id',auth,adm,wrap(async(req,res)=>{await q('delete from 
 app.get('/api/reports',auth,adm,wrap(async(_,r)=>r.json(await q('select b.id,b.title,b.code,u.full_name added_by_name from books b left join users u on u.id=b.added_by where not b.reviewed order by b.id desc'))));
 
 /* ---------- Utilisateurs (administrateur) ---------- */
-app.get('/api/users',auth,adm,wrap(async(_,r)=>r.json(await q('select id,email,full_name,role,active,created_at from users order by role,full_name'))));
+app.get('/api/users',auth,adm,wrap(async(_,r)=>r.json((await q('select * from users')).map(u=>({id:u.id,email:u.email,full_name:u.full_name||u.email,role:u.role,active:u.active!==false})).sort((a,b)=>a.role.localeCompare(b.role)||a.full_name.localeCompare(b.full_name,'fr')))));
 app.post('/api/users',auth,adm,wrap(async(req,res)=>{const{email,name,password,role}=req.body;if(!email||(password||'').length<6)throw fail(400,'Email et mot de passe (6 caractères min.) requis');
   await q('insert into users(email,full_name,role,password_hash) values($1,$2,$3,$4)',[email.toLowerCase().trim(),name||email,ROLES.includes(role)?role:'student',await bcrypt.hash(password,10)]);res.json({ok:1})}));
 app.patch('/api/users/:id',auth,adm,wrap(async(req,res)=>{const id=+req.params.id,b=req.body;
