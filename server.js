@@ -5,7 +5,8 @@ const db=new pg.Pool({connectionString:E.DATABASE_URL,ssl:{rejectUnauthorized:fa
 const q=(s,p)=>db.query(s,p).then(r=>r.rows),qa=(s,p)=>db.query({text:s,values:p,rowMode:'array'}).then(r=>r.rows);
 const fail=(http,error)=>Object.assign(new Error(error),{http});
 const tx=async f=>{const c=await db.connect();try{await c.query('begin');const r=await f((s,p)=>c.query(s,p).then(x=>x.rows));await c.query('commit');return r}catch(e){await c.query('rollback');throw e}finally{c.release()}};
-const app=express();app.use(compression());app.use(express.json({limit:'10mb'}));
+import {domainOf} from './docs/domaines.js';
+const app=express();app.set('trust proxy',1);app.use(compression());app.use(express.json({limit:'10mb'}));
 const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Cet email est déjà utilisé':'Erreur serveur'})});
 const auth=async(req,res,next)=>{try{const t=jwt.verify((req.headers.authorization||'').slice(7),SECRET),[u]=await q('select id,full_name,email,role,active from users where id=$1',[t.id]);if(!u||!u.active)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Connexion requise'})}};
 const need=(...r)=>(req,res,next)=>r.includes(req.u.role)?next():res.status(403).json({error:'Accès refusé'});
@@ -94,6 +95,37 @@ app.patch('/api/users/:id',auth,adm,wrap(async(req,res)=>{const id=+req.params.i
   if('full_name'in b)await q('update users set full_name=$1 where id=$2',[b.full_name,id]);
   if(b.password){if(b.password.length<6)throw fail(400,'6 caractères minimum');await q('update users set password_hash=$1 where id=$2',[await bcrypt.hash(b.password,10),id])}
   res.json({ok:1})}));
+
+
+/* ---------- Recherche avancée (Gemini, clé sur le serveur) ---------- */
+const nrm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+let BI=null;const buildIdx=async()=>{const m=new Map();
+  for(const b of await q("select id,title,subtitle,author,collection,code,domain,status,lost from books where kind='physique'")){const k=nrm(b.title)+'|'+nrm(b.author),ok=b.status=='available'&&!b.lost,o=m.get(k);
+    if(!o){const dom=b.domain||domainOf(b.code);m.set(k,{...b,dom,ok,copies:1,ti:nrm(b.title),su:nrm(b.subtitle),au:nrm(b.author),co:nrm(b.collection),dm:nrm(dom)})}else{o.copies++;if(ok&&!o.ok)Object.assign(o,{id:b.id,code:b.code,ok:true})}}
+  BI=[...m.values()]};
+app.use('/api/books',(req,res,next)=>{if(req.method!='GET')BI=null;next()});
+const has=(f,w,l)=>f&&(l?f.includes(w):(' '+f+' ').includes(' '+w+' '));
+const retrieve=words=>{const T=[...new Set(words.map(w=>nrm(String(w)).trim()).filter(w=>w.length>=3))].slice(0,60),sc=[];
+  for(const b of BI){let s=0;for(const w of T){const l=w.length>=4;if(has(b.ti,w,l))s+=3;if(has(b.su,w,l))s+=2;if(has(b.co,w,l))s+=1;if(has(b.au,w,l))s+=.5;if(s&&has(b.dm,w,l))s+=.3}if(s>0)sc.push([s,b])}
+  return sc.sort((a,b)=>b[0]-a[0]).slice(0,50).map(x=>x[1])};
+const gem=async prompt=>{const key=E.GEMINI_API_KEY;if(!key)throw fail(503,'La recherche avancée n’est pas encore configurée (clé Gemini manquante).');
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(E.GEMINI_MODEL||'gemini-2.5-flash-lite')}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
+    body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.2,responseMimeType:'application/json'}}),signal:AbortSignal.timeout(25000)}).catch(()=>{throw fail(504,'Le service d’IA ne répond pas. Réessayez dans un instant.')});
+  if(!r.ok){console.error('Gemini',r.status,(await r.text()).slice(0,300));throw fail(r.status==429?429:502,r.status==429?'Le service gratuit est saturé pour le moment. Réessayez dans une minute.':r.status==404?'Modèle IA introuvable : vérifiez le réglage GEMINI_MODEL sur Render.':'Clé ou réglage Gemini invalide : vérifiez GEMINI_API_KEY et GEMINI_MODEL sur Render.')}
+  const j=await r.json(),t=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').replace(/^\s*```(?:json)?|```\s*$/g,'').trim();try{return JSON.parse(t)}catch{throw fail(502,'Réponse de l’IA illisible. Réessayez.')}};
+const rate=new Map(),memo=new Map();let day='',used=0;
+app.post('/api/ai/search',wrap(async(req,res)=>{const s=String(req.body?.q||'').trim().slice(0,200);if(s.length<3)throw fail(400,'Écrivez au moins quelques mots.');
+  const ck=nrm(s);if(memo.has(ck))return res.json(memo.get(ck));
+  const now=Date.now(),h=(rate.get(req.ip)||[]).filter(t=>now-t<6e5);if(h.length>=12)throw fail(429,'Trop de questions : patientez quelques minutes.');
+  const d=new Date().toISOString().slice(0,10);if(day!=d){day=d;used=0}if(used>=(+E.AI_DAILY_LIMIT||250))throw fail(429,'Limite quotidienne atteinte. Revenez demain.');
+  h.push(now);rate.set(req.ip,h);used++;if(!BI)await buildIdx();
+  const a=await gem(`Tu aides les lecteurs d'une bibliothèque catholique de théologie (livres surtout en français).\nDemande du lecteur : « ${s} »\nRéponds uniquement en JSON : {"comprehension":"une phrase courte qui reformule ce que cherche le lecteur","mots":["..."]}\n"mots" : 25 à 40 mots-clés ou racines utiles pour retrouver des livres dans un catalogue de titres (synonymes, termes théologiques proches, formes courtes comme "amour", "charit", "eglise"), en minuscules et sans accents.`).catch(e=>{if(e.http==429||e.http==503)throw e;return null});
+  const cand=retrieve([...(a?.mots||[]),...s.split(/\s+/)]),byId=new Map(cand.map(b=>[b.id,b]));let out=[],mode='mots';
+  if(cand.length){try{const g=await gem(`Demande du lecteur : « ${s} »\nLivres du catalogue (id | titre | auteur | domaine) :\n${cand.map(b=>`${b.id} | ${b.title} | ${b.author||'—'} | ${b.dom}`).join('\n')}\nChoisis jusqu'à 12 livres qui répondent vraiment à la demande, du plus au moins pertinent. N'utilise que les id fournis. Base-toi uniquement sur le titre, l'auteur et le domaine : n'invente aucun contenu.\nRéponds uniquement en JSON : {"resultats":[{"id":123,"raison":"une phrase courte"}]}`);
+      const seen=new Set();out=(g.resultats||[]).filter(x=>byId.has(+x.id)&&!seen.has(+x.id)&&seen.add(+x.id)).slice(0,12).map(x=>({id:+x.id,reason:String(x.raison||'').slice(0,160)}));mode='ia'}catch(e){console.error('classement IA indisponible :',e.message)}
+    if(!out.length)out=cand.slice(0,12).map(b=>({id:b.id,reason:''}))}
+  const r={comprehension:a?.comprehension||'',mode,results:out.map(x=>{const b=byId.get(x.id);return{id:b.id,title:b.title,author:b.author,code:b.code,copies:b.copies,reason:x.reason}})};
+  if(memo.size>300)memo.delete(memo.keys().next().value);memo.set(ck,r);res.json(r)}));
 
 app.use(express.static(path.join(DIR,'docs')));
 app.listen(E.PORT||3000,()=>console.log('Serveur prêt'));
