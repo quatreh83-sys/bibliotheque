@@ -10,7 +10,7 @@ const app=express();app.set('trust proxy',1);app.use(compression());app.use(expr
 const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Cet email est déjà utilisé':'Erreur serveur'})});
 const auth=async(req,res,next)=>{try{const t=jwt.verify((req.headers.authorization||'').slice(7),SECRET),[u]=await q('select id,full_name,email,role,active from users where id=$1',[t.id]);if(!u||!u.active)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Connexion requise'})}};
 const need=(...r)=>(req,res,next)=>r.includes(req.u.role)?next():res.status(403).json({error:'Accès refusé'});
-const adm=need('admin'),staff=need('admin','librarian'),ROLES=['student','librarian','admin'];
+const adm=need('admin'),staff=need('admin','librarian','trainer'),ROLES=['student','librarian','trainer','admin'];
 
 /* ---------- Schéma (créé / mis à jour automatiquement) ---------- */
 await q(`create table if not exists users(id serial primary key,email text unique not null,full_name text,role text not null default 'student',password_hash text not null,active boolean not null default true,created_at timestamptz default now());

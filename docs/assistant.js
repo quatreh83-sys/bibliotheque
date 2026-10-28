@@ -27,5 +27,6 @@ export function initAssistant({api,loadBooks,open,nice,ico,esc,S}){
     if(t.dataset.b=='close')toggle(false);if(t.dataset.b=='side'){st.side=st.side=='left'?'right':'left';save();place()}
     if(t.dataset.q)ask(t.dataset.q);if(t.dataset.id){await loadBooks('physique').catch(()=>{});if(innerWidth<=900)toggle(false);open(+t.dataset.id)}});
   $('.bform').addEventListener('submit',e=>{e.preventDefault();const i=e.target.q,q=i.value.trim();if(q.length<3)return;i.value='';ask(q)});
+  addEventListener('bot:ask',e=>{toggle(true);const q=String(e.detail||'').trim();if(q.length>=3)ask(q)});
   document.addEventListener('keydown',e=>{if(e.key=='Escape'&&!panel.hidden)toggle(false)});addEventListener('resize',place);place();
 }
