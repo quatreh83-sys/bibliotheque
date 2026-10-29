@@ -78,3 +78,5 @@ dialog h2{font-size:1.3rem}.dl{display:grid;grid-template-columns:130px 1fr;gap:
 .bchips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem}.bchips button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:.25rem .7rem;font:inherit;font-size:.85rem;cursor:pointer;color:var(--ink)}.bchips button:hover{border-color:var(--accent);color:var(--accent)}
 .bform{display:flex;gap:.5rem;padding:.7rem;border-top:1px solid var(--line)}
 @media(max-width:900px){#bot.open[data-side] .botp{position:fixed;left:8px;right:8px;top:8px;bottom:8px;width:auto;height:auto;border-radius:16px}#bot.open .botb{display:none}}
+
+.card{position:relative}.card .grow{padding-right:1.4rem}.wbtn{position:absolute;top:.5rem;right:.5rem;width:34px;height:34px;display:grid;place-items:center;border:0;background:transparent;border-radius:9px;color:var(--muted);cursor:pointer}.wbtn:hover{background:#f0eee9;color:var(--accent)}.wbtn.on{color:var(--accent)}.wbtn.on .ic{fill:currentColor}

@@ -7,8 +7,8 @@ const fail=(http,error)=>Object.assign(new Error(error),{http});
 const tx=async f=>{const c=await db.connect();try{await c.query('begin');const r=await f((s,p)=>c.query(s,p).then(x=>x.rows));await c.query('commit');return r}catch(e){await c.query('rollback');throw e}finally{c.release()}};
 import {domainOf} from './docs/domaines.js';
 const app=express();app.set('trust proxy',1);app.use(compression());app.use(express.json({limit:'10mb'}));
-const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Cet email est déjà utilisé':'Erreur serveur'})});
-const auth=async(req,res,next)=>{try{const t=jwt.verify((req.headers.authorization||'').slice(7),SECRET),[u]=await q('select id,full_name,email,role,active from users where id=$1',[t.id]);if(!u||!u.active)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Connexion requise'})}};
+const wrap=f=>(req,res)=>f(req,res).catch(e=>{if(!e.http)console.error(e);const dup=e.code=='23505';res.status(e.http||(dup?409:500)).json({error:e.http?e.message:dup?'Cet identifiant ou cet email est déjà utilisé':'Erreur serveur'})});
+const auth=async(req,res,next)=>{try{const t=jwt.verify((req.headers.authorization||'').slice(7),SECRET),[u]=await q('select id,full_name,email,username,role,active from users where id=$1',[t.id]);if(!u||!u.active)throw 0;req.u=u;next()}catch{res.status(401).json({error:'Connexion requise'})}};
 const need=(...r)=>(req,res,next)=>r.includes(req.u.role)?next():res.status(403).json({error:'Accès refusé'});
 const adm=need('admin'),staff=need('admin','librarian','trainer'),ROLES=['student','librarian','trainer','admin'];
 
@@ -21,7 +21,8 @@ alter table users add column if not exists active boolean not null default true;
 alter table books add column if not exists kind text not null default 'physique';alter table books add column if not exists numero int;alter table books add column if not exists path text;alter table books add column if not exists filetype text;
 alter table books add column if not exists reviewed boolean not null default true;alter table books add column if not exists added_by int;
 alter table loans add column if not exists return_requested_at timestamptz;alter table loans add column if not exists borrower_name text;alter table loans add column if not exists lent_by int;
-alter table loans alter column user_id drop not null;
+alter table loans alter column user_id drop not null;alter table users alter column email drop not null;alter table users add column if not exists username text;create unique index if not exists users_username on users(lower(username));
+create table if not exists wishlist(user_id int references users on delete cascade,book_id int references books on delete cascade,added_at timestamptz default now(),primary key(user_id,book_id));
 create index if not exists books_kind on books(kind);create index if not exists loans_open on loans(book_id) where returned_at is null`);
 if(E.ADMIN_EMAIL&&E.ADMIN_PASSWORD)await q(`insert into users(email,full_name,role,password_hash) values($1,$2,'admin',$3) on conflict(email) do update set role='admin',password_hash=$3,active=true`,[E.ADMIN_EMAIL.toLowerCase(),E.ADMIN_NAME||'Administrateur',await bcrypt.hash(E.ADMIN_PASSWORD,10)]);
 
@@ -39,12 +40,12 @@ const BC='id,kind,numero,title,subtitle,author,publisher,city,collection,volume,
 app.get('/api/stats',wrap(async(_,r)=>{const[s]=await q("select count(*) filter(where kind='physique')::int physique,count(*) filter(where kind='numerique')::int numerique,count(*) filter(where kind='physique' and status='available' and not lost)::int available,count(*) filter(where kind='physique' and status='borrowed')::int borrowed from books");r.json(s)}));
 app.get('/api/books',wrap(async(req,res)=>res.json({cols:BC.split(','),rows:await qa(`select ${BC} from books where kind=$1 order by id`,[req.query.kind=='numerique'?'numerique':'physique'])})));
 app.get('/api/books/:id',wrap(async(req,res)=>{const[b]=await q(`select ${BC} from books where id=$1`,[+req.params.id]);b?res.json(b):res.status(404).json({error:'Introuvable'})}));
-app.post('/api/login',wrap(async(req,res)=>{const[u]=await q('select * from users where email=$1',[(req.body.email||'').toLowerCase().trim()]);
-  if(!u||!u.active||!await bcrypt.compare(req.body.password||'',u.password_hash))throw fail(401,'Email ou mot de passe incorrect');
-  const user={id:u.id,name:u.full_name||u.email,email:u.email,role:u.role};res.json({token:jwt.sign({id:u.id},SECRET,{expiresIn:'30d'}),user})}));
+app.post('/api/login',wrap(async(req,res)=>{const L=String(req.body.login||req.body.email||'').toLowerCase().trim(),[u]=await q('select * from users where lower(email)=$1 or lower(username)=$1 limit 1',[L]);
+  if(!u||!u.active||!await bcrypt.compare(req.body.password||'',u.password_hash))throw fail(401,'Identifiant ou mot de passe incorrect');
+  const user={id:u.id,name:u.full_name||u.username||u.email,email:u.email,username:u.username,role:u.role};res.json({token:jwt.sign({id:u.id},SECRET,{expiresIn:'30d'}),user})}));
 
 /* ---------- Compte ---------- */
-app.get('/api/me',auth,(req,res)=>res.json({id:req.u.id,name:req.u.full_name||req.u.email,email:req.u.email,role:req.u.role}));
+app.get('/api/me',auth,(req,res)=>res.json({id:req.u.id,name:req.u.full_name||req.u.username||req.u.email,email:req.u.email,username:req.u.username,role:req.u.role}));
 app.patch('/api/me/password',auth,wrap(async(req,res)=>{const[u]=await q('select password_hash from users where id=$1',[req.u.id]);
   if(!await bcrypt.compare(req.body.old||'',u.password_hash))throw fail(400,'Ancien mot de passe incorrect');if((req.body.new||'').length<6)throw fail(400,'6 caractères minimum');
   await q('update users set password_hash=$1 where id=$2',[await bcrypt.hash(req.body.new,10),req.u.id]);res.json({ok:1})}));
@@ -85,11 +86,15 @@ app.delete('/api/books/:id',auth,adm,wrap(async(req,res)=>{await q('delete from 
 app.get('/api/reports',auth,adm,wrap(async(_,r)=>r.json(await q('select b.id,b.title,b.code,u.full_name added_by_name from books b left join users u on u.id=b.added_by where not b.reviewed order by b.id desc'))));
 
 /* ---------- Utilisateurs (administrateur) ---------- */
-app.get('/api/users',auth,adm,wrap(async(_,r)=>r.json((await q('select * from users')).map(u=>({id:u.id,email:u.email,full_name:u.full_name||u.email,role:u.role,active:u.active!==false})).sort((a,b)=>a.role.localeCompare(b.role)||a.full_name.localeCompare(b.full_name,'fr')))));
-app.post('/api/users',auth,adm,wrap(async(req,res)=>{const{email,name,password,role}=req.body;if(!email||(password||'').length<6)throw fail(400,'Email et mot de passe (6 caractères min.) requis');
-  await q('insert into users(email,full_name,role,password_hash) values($1,$2,$3,$4)',[email.toLowerCase().trim(),name||email,ROLES.includes(role)?role:'student',await bcrypt.hash(password,10)]);res.json({ok:1})}));
+app.get('/api/users',auth,adm,wrap(async(_,r)=>r.json((await q('select * from users')).map(u=>({id:u.id,email:u.email,username:u.username,full_name:u.full_name||u.username||u.email,role:u.role,active:u.active!==false})).sort((a,b)=>a.role.localeCompare(b.role)||a.full_name.localeCompare(b.full_name,'fr')))));
+const UN=/^[a-z0-9._-]{3,30}$/;
+app.post('/api/users',auth,adm,wrap(async(req,res)=>{const{name,password,role}=req.body,email=String(req.body.email||'').trim().toLowerCase()||null,un=String(req.body.username||'').trim().toLowerCase()||null;
+  if(!email&&!un)throw fail(400,'Indiquez au moins un identifiant ou un email');if(un&&!UN.test(un))throw fail(400,'Identifiant : 3 à 30 caractères (lettres, chiffres, . _ -)');if((password||'').length<6)throw fail(400,'Mot de passe : 6 caractères minimum');
+  await q('insert into users(email,username,full_name,role,password_hash) values($1,$2,$3,$4,$5)',[email,un,name||un||email,ROLES.includes(role)?role:'student',await bcrypt.hash(password,10)]);res.json({ok:1})}));
 app.patch('/api/users/:id',auth,adm,wrap(async(req,res)=>{const id=+req.params.id,b=req.body;
   if(id==req.u.id&&('role'in b||'active'in b))throw fail(400,'Vous ne pouvez pas modifier votre propre rôle ou statut');
+  if('username'in b||'email'in b){const[u]=await q('select email,username from users where id=$1',[id]),em='email'in b?(String(b.email||'').trim().toLowerCase()||null):u.email,un='username'in b?(String(b.username||'').trim().toLowerCase()||null):u.username;
+    if(!em&&!un)throw fail(400,'Il faut au moins un email ou un identifiant');if(un&&!UN.test(un))throw fail(400,'Identifiant : 3 à 30 caractères (lettres, chiffres, . _ -)');await q('update users set email=$1,username=$2 where id=$3',[em,un,id])}
   if('role'in b){if(!ROLES.includes(b.role))throw fail(400,'Rôle invalide');await q('update users set role=$1 where id=$2',[b.role,id])}
   if('active'in b)await q('update users set active=$1 where id=$2',[!!b.active,id]);
   if('full_name'in b)await q('update users set full_name=$1 where id=$2',[b.full_name,id]);
@@ -127,5 +132,9 @@ app.post('/api/ai/search',wrap(async(req,res)=>{const s=String(req.body?.q||'').
   const r={comprehension:a?.comprehension||'',mode,results:out.map(x=>{const b=byId.get(x.id);return{id:b.id,title:b.title,author:b.author,code:b.code,copies:b.copies,reason:x.reason}})};
   if(memo.size>300)memo.delete(memo.keys().next().value);memo.set(ck,r);res.json(r)}));
 
+/* ---------- Ma sélection (livres qui m'intéressent) ---------- */
+app.get('/api/wishlist',auth,wrap(async(req,r)=>r.json(await q('select b.id,b.kind,b.title,b.author,b.code,w.added_at from wishlist w join books b on b.id=w.book_id where w.user_id=$1 order by w.added_at desc',[req.u.id]))));
+app.post('/api/wishlist/:id',auth,wrap(async(req,res)=>{await q('insert into wishlist(user_id,book_id) values($1,$2) on conflict do nothing',[req.u.id,+req.params.id]);res.json({ok:1})}));
+app.delete('/api/wishlist/:id',auth,wrap(async(req,res)=>{await q('delete from wishlist where user_id=$1 and book_id=$2',[req.u.id,+req.params.id]);res.json({ok:1})}));
 app.use(express.static(path.join(DIR,'docs')));
 app.listen(E.PORT||3000,()=>console.log('Serveur prêt'));
