@@ -20,7 +20,7 @@ create table if not exists meta(k text primary key,v text);
 alter table users add column if not exists active boolean not null default true;alter table users add column if not exists created_at timestamptz default now();
 alter table books add column if not exists kind text not null default 'physique';alter table books add column if not exists numero int;alter table books add column if not exists path text;alter table books add column if not exists filetype text;
 alter table books add column if not exists reviewed boolean not null default true;alter table books add column if not exists added_by int;
-alter table loans add column if not exists return_requested_at timestamptz;alter table loans add column if not exists borrower_name text;alter table loans add column if not exists lent_by int;
+alter table books add column if not exists note text;alter table loans add column if not exists return_requested_at timestamptz;alter table loans add column if not exists borrower_name text;alter table loans add column if not exists lent_by int;
 alter table loans alter column user_id drop not null;alter table users alter column email drop not null;alter table users add column if not exists username text;create unique index if not exists users_username on users(lower(username));
 create table if not exists wishlist(user_id int references users on delete cascade,book_id int references books on delete cascade,added_at timestamptz default now(),primary key(user_id,book_id));
 create index if not exists books_kind on books(kind);create index if not exists loans_open on loans(book_id) where returned_at is null`);
@@ -34,9 +34,17 @@ if(fs.existsSync(seedFile)&&!(await q("select 1 from meta where k='seed'")).leng
     await q(`insert into books(${SC}) select ${SC.map(c=>c=='kind'?"coalesce(kind,'physique')":c)} from json_populate_recordset(null::books,$1)`,[JSON.stringify(objs)])}
   await q("insert into meta values('seed',$1)",[d.version]);console.log('Catalogue chargé :',d.rows.length,'notices')}
 
+/* ---------- Lots d'ajouts au catalogue (chacun appliqué une seule fois, retraits et sélections conservés) ---------- */
+const AJ=path.join(DIR,'data','ajouts');
+if(fs.existsSync(AJ))for(const f of fs.readdirSync(AJ).filter(x=>x.endsWith('.json.gz')).sort()){const key='ajout:'+f;if((await q('select 1 from meta where k=$1',[key])).length)continue;
+  const d=JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(AJ,f)))),cols=[...SC,'reviewed','note'];
+  await tx(async t=>{for(let i=0;i<d.rows.length;i+=500){const objs=d.rows.slice(i,i+500).map(r=>Object.fromEntries(d.cols.map((c,j)=>[c,r[j]])));
+    await t(`insert into books(${cols}) select ${cols.map(c=>c=='kind'?"coalesce(kind,'physique')":c=='reviewed'?'coalesce(reviewed,true)':c)} from json_populate_recordset(null::books,$1)`,[JSON.stringify(objs)])}
+    await t('insert into meta values($1,$2)',[key,String(d.rows.length)])});console.log('Lot d’ajouts appliqué :',f,d.rows.length)}
+
 /* ---------- Public ---------- */
 app.get('/api/version',(_,r)=>r.json({version:'2.1'}));
-const BC='id,kind,numero,title,subtitle,author,publisher,city,collection,volume,year,code,domain,path,filetype,isbn,rayon,etagere,bloc,status,lost,reviewed';
+const BC='id,kind,numero,title,subtitle,author,publisher,city,collection,volume,year,code,domain,path,filetype,isbn,rayon,etagere,bloc,status,lost,reviewed,note';
 app.get('/api/stats',wrap(async(_,r)=>{const[s]=await q("select count(*) filter(where kind='physique')::int physique,count(*) filter(where kind='numerique')::int numerique,count(*) filter(where kind='physique' and status='available' and not lost)::int available,count(*) filter(where kind='physique' and status='borrowed')::int borrowed from books");r.json(s)}));
 app.get('/api/books',wrap(async(req,res)=>res.json({cols:BC.split(','),rows:await qa(`select ${BC} from books where kind=$1 order by id`,[req.query.kind=='numerique'?'numerique':'physique'])})));
 app.get('/api/books/:id',wrap(async(req,res)=>{const[b]=await q(`select ${BC} from books where id=$1`,[+req.params.id]);b?res.json(b):res.status(404).json({error:'Introuvable'})}));
@@ -83,7 +91,7 @@ app.patch('/api/books/:id',auth,adm,wrap(async(req,res)=>{const k=EF.filter(x=>x
   await q(`update books set ${k.map((x,i)=>x+'=$'+(i+1))},reviewed=true where id=$${k.length+1}`,[...k.map(x=>req.body[x]),+req.params.id]);res.json({ok:1})}));
 app.patch('/api/books/:id/lost',auth,staff,wrap(async(req,res)=>{await q('update books set lost=not lost where id=$1',[+req.params.id]);res.json({ok:1})}));
 app.delete('/api/books/:id',auth,adm,wrap(async(req,res)=>{await q('delete from books where id=$1',[+req.params.id]);res.json({ok:1})}));
-app.get('/api/reports',auth,adm,wrap(async(_,r)=>r.json(await q('select b.id,b.title,b.code,u.full_name added_by_name from books b left join users u on u.id=b.added_by where not b.reviewed order by b.id desc'))));
+app.get('/api/reports',auth,adm,wrap(async(_,r)=>r.json(await q('select b.id,b.title,b.code,b.note,u.full_name added_by_name from books b left join users u on u.id=b.added_by where not b.reviewed order by b.id desc'))));
 
 /* ---------- Utilisateurs (administrateur) ---------- */
 app.get('/api/users',auth,adm,wrap(async(_,r)=>r.json((await q('select * from users')).map(u=>({id:u.id,email:u.email,username:u.username,full_name:u.full_name||u.username||u.email,role:u.role,active:u.active!==false})).sort((a,b)=>a.role.localeCompare(b.role)||a.full_name.localeCompare(b.full_name,'fr')))));
