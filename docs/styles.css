@@ -80,3 +80,18 @@ dialog h2{font-size:1.3rem}.dl{display:grid;grid-template-columns:130px 1fr;gap:
 @media(max-width:900px){#bot.open[data-side] .botp{position:fixed;left:8px;right:8px;top:8px;bottom:8px;width:auto;height:auto;border-radius:16px}#bot.open .botb{display:none}}
 
 .card{position:relative}.card .grow{padding-right:1.4rem}.wbtn{position:absolute;top:.5rem;right:.5rem;width:34px;height:34px;display:grid;place-items:center;border:0;background:transparent;border-radius:9px;color:var(--muted);cursor:pointer}.wbtn:hover{background:#f0eee9;color:var(--accent)}.wbtn.on{color:var(--accent)}.wbtn.on .ic{fill:currentColor}
+
+/* ---------- Thème v2 : papier grainé, lavis rosé, feuillage ---------- */
+:root{--bg:#eeece8;--line:#e2ddd6}
+body{background-color:var(--bg);background-image:url(paper.png)}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(46% 34% at 88% 6%,rgba(233,186,174,.40),transparent 72%),radial-gradient(40% 30% at 4% 38%,rgba(233,186,174,.22),transparent 72%),radial-gradient(48% 30% at 92% 94%,rgba(233,186,174,.30),transparent 72%),radial-gradient(34% 22% at 20% 96%,rgba(172,190,174,.24),transparent 72%)}
+.top{background:rgba(244,242,238,.86)}.tabbar{background:rgba(244,242,238,.94)}
+.brand{gap:.7rem}.mark{width:40px;height:40px;object-fit:contain;flex:none}
+.card,.stat,.tile,.panel,.list{background:rgba(255,255,255,.93)}
+.hero{position:relative;overflow:hidden;background:radial-gradient(60% 90% at 82% 15%,rgba(233,186,174,.38),transparent 70%),url(paper.png),linear-gradient(rgba(255,255,255,.66),rgba(255,255,255,.66));border:1px solid rgba(255,255,255,.75)}
+.hero::before,.hero::after{content:"";position:absolute;width:230px;height:265px;background:url(leaves.svg) no-repeat center/contain;pointer-events:none}
+.hero::before{left:-44px;top:-26px;transform:rotate(-14deg)}.hero::after{right:-50px;bottom:-40px;transform:rotate(166deg)}.hero>*{position:relative;z-index:1}
+.hero-logo{display:block;width:min(300px,72%);height:auto;margin:0 auto 1.1rem}.login .hero-logo{width:min(260px,80%);margin-bottom:.6rem}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}.stat,.tile,.duo .panel{animation:rise .4s ease both}.stat:nth-child(2),.tile:nth-child(2){animation-delay:.05s}.stat:nth-child(3),.tile:nth-child(3){animation-delay:.1s}.stat:nth-child(4),.tile:nth-child(4){animation-delay:.15s}
+@media(max-width:600px){.hero::before,.hero::after{width:140px;height:160px;opacity:.7}.mark{width:36px;height:36px}}
+@media(prefers-reduced-motion:reduce){.stat,.tile,.duo .panel{animation:none}}
